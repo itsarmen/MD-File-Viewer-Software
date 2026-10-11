@@ -64,9 +64,10 @@ See [Build a Debian package](#build-a-debian-package-deb) to produce your own.
 - **Native look & feel** — Yaru theme with automatic light/dark following the system.
 - **Keyboard scrolling** — arrows, Page Up/Down and Home/End scroll the preview instantly.
 
-## Screenshots
+## Screenshot
 
-> Add screenshots here (e.g. `docs/preview.png`, `docs/split.png`) to showcase the app.
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/f8d4f184-c6a0-44c8-9601-581d09b50edd" />
+
 
 ## Requirements
 
