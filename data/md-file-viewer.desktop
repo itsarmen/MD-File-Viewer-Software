@@ -1,0 +1,19 @@
+# MD File Viewer
+# Author:     Amiran Kimadze (itsarmen)
+# GitHub:     https://github.com/itsarmen
+# Email:      amoswaper@gmail.com
+# Web:        https://xrow.asia
+
+[Desktop Entry]
+Type=Application
+Name=MD File Viewer
+GenericName=Markdown Viewer & Editor
+Comment=Open and edit Markdown files with GitHub-style formatting
+Exec=md-file-viewer %F
+Icon=md-file-viewer
+Terminal=false
+Categories=Utility;TextEditor;Development;GTK;
+Keywords=markdown;md;editor;viewer;github;readme;
+MimeType=text/markdown;text/x-markdown;
+StartupNotify=true
+StartupWMClass=dev.itsarmen.md_file_viewer
