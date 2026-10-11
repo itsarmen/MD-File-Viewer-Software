@@ -11,12 +11,12 @@ Web:        https://xrow.asia
 </p>
 
 <p align="center">
-  <a href="https://flutter.dev"><img src="https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter&logoColor=white" alt="Flutter"></a>
-  <a href="https://dart.dev"><img src="https://img.shields.io/badge/Dart-3.x-0175C2?logo=dart&logoColor=white" alt="Dart"></a>
-  <img src="https://img.shields.io/badge/Platform-Linux-FCC624?logo=linux&logoColor=black" alt="Linux">
-  <img src="https://img.shields.io/badge/Theme-Yaru-77216F?logo=ubuntu&logoColor=white" alt="Yaru">
-  <img src="https://img.shields.io/badge/Markdown-GitHub--flavored-181717?logo=github&logoColor=white" alt="GitHub-flavored Markdown">
-  <a href="https://github.com/itsarmen/MD-File-Viewer-Software/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="MIT License"></a>
+  <a href="https://flutter.dev"><img src="https://badgen.net/badge/Flutter/3.x/02569B?icon=flutter" alt="Flutter"></a>
+  <a href="https://dart.dev"><img src="https://badgen.net/badge/Dart/3.x/0175C2?icon=dart" alt="Dart"></a>
+  <img src="https://badgen.net/badge/Linux/platform/FCC624?icon=linux" alt="Linux">
+  <img src="https://badgen.net/badge/Yaru/theme/77216F" alt="Yaru">
+  <img src="https://badgen.net/badge/Markdown/GitHub-flavored/181717?icon=github" alt="GitHub-flavored Markdown">
+  <a href="https://github.com/itsarmen/MD-File-Viewer-Software/blob/main/LICENSE"><img src="https://badgen.net/badge/License/MIT/green" alt="MIT License"></a>
 </p>
 
 <p align="center">
@@ -95,6 +95,30 @@ After installing, launch it from your applications list, or:
 md-file-viewer path/to/README.md
 ```
 
+## Build a Debian package (.deb)
+
+To build a distributable Debian/Ubuntu package (requires the release bundle and `dpkg-deb`):
+
+```bash
+flutter build linux --release
+./scripts/build-deb.sh
+```
+
+This produces `dist/md-file-viewer_<version>_<arch>.deb`, containing the app bundle under
+`/usr/lib/md-file-viewer/`, a launcher at `/usr/bin/md-file-viewer`, icons, the desktop entry
+and documentation. The version is read from `pubspec.yaml` and the architecture from the host.
+
+Install it with:
+
+```bash
+sudo dpkg -i dist/md-file-viewer_*.deb
+# or, to pull in any missing dependencies automatically:
+sudo apt install ./dist/md-file-viewer_*.deb
+```
+
+Options: `--version X.Y.Z` to override the version, `--arch amd64` to target another
+architecture.
+
 ## Usage
 
 ### Opening files
@@ -155,6 +179,7 @@ data/
 icons/                          # app icons + README banner
 scripts/
   install.sh                    # user-level installer
+  build-deb.sh                  # Debian (.deb) package builder
 tool/
   generate_icons.py             # icon generator (Pillow)
 test/                           # widget & scroll tests
