@@ -20,11 +20,29 @@ Web:        https://xrow.asia
 </p>
 
 <p align="center">
+  <a href="https://github.com/itsarmen/MD-File-Viewer-Software/releases/latest"><img src="https://badgen.net/github/release/itsarmen/MD-File-Viewer-Software" alt="Latest release"></a>
+  <a href="https://github.com/itsarmen/MD-File-Viewer-Software/releases/latest"><img src="https://badgen.net/badge/download/.deb/2ea44f?icon=package" alt="Download .deb"></a>
+</p>
+
+<p align="center">
   A native Linux desktop app to <strong>view and edit Markdown</strong> files with
   <strong>GitHub-style formatting</strong>, built with Flutter and the Yaru (GNOME) theme.
 </p>
 
 ---
+
+## Download
+
+Get the latest `.deb` from the
+[releases page](https://github.com/itsarmen/MD-File-Viewer-Software/releases/latest):
+
+```bash
+curl -LO https://github.com/itsarmen/MD-File-Viewer-Software/releases/latest/download/md-file-viewer_1.0.0_amd64.deb
+sudo apt install ./md-file-viewer_1.0.0_amd64.deb
+```
+
+The asset name embeds the version; open the releases page if a newer version is available.
+See [Build a Debian package](#build-a-debian-package-deb) to produce your own.
 
 ## Features
 
