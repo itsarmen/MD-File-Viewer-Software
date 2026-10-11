@@ -178,4 +178,8 @@ test/                           # widget & scroll tests
 
 ## License
 
-Released under the [MIT License](LICENSE).
+MD File Viewer is **free and open-source software** released under the
+[MIT License](LICENSE). Anyone is welcome to use, study, modify, and improve it —
+forks and contributions are encouraged. The original author and copyright holder is
+**Amiran Kimadze (itsarmen)**, who must remain credited in all copies and derivative
+works. See [LICENSE](LICENSE) for the full text.
