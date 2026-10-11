@@ -84,9 +84,10 @@ done
 mkdir -p "$STAGE/usr/share/icons/hicolor/scalable/apps"
 cp "$ROOT/icons/$APP.svg" "$STAGE/usr/share/icons/hicolor/scalable/apps/$APP.svg"
 
-# Desktop entry (resolve via PATH so any prefix works).
+# Desktop entry. Use the absolute launcher path so the entry still works even
+# when /usr/bin is missing from the session PATH (avoids "not found in $PATH").
 install -m644 "$ROOT/data/$APP.desktop" "$STAGE/usr/share/applications/$APP.desktop"
-sed -i "s|^Exec=.*|Exec=$APP %F|" "$STAGE/usr/share/applications/$APP.desktop"
+sed -i "s|^Exec=.*|Exec=/usr/bin/$APP %F|" "$STAGE/usr/share/applications/$APP.desktop"
 
 # --- Documentation ---------------------------------------------------------
 cat > "$STAGE/usr/share/doc/$APP/copyright" <<EOF
