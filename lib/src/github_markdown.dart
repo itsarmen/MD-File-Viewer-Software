@@ -6,6 +6,8 @@
  * Web:        https://xrow.asia
  */
 
+import 'dart:io';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -181,11 +183,12 @@ class _GitHubMarkdownState extends State<GitHubMarkdown> {
     final palette = GitHubPalette.of(context);
     final sheet = gitHubMarkdownStyleSheet(palette);
     return MarkdownBody(
-      data: widget.data,
+      data: _expandHtmlImages(widget.data),
       selectable: false,
       extensionSet: md.ExtensionSet.gitHubWeb,
       styleSheet: sheet,
-      imageDirectory: widget.imageDirectory,
+      sizedImageBuilder: (config) =>
+          _buildImage(config, palette, widget.imageDirectory),
       builders: {
         'pre': _CodeBlockBuilder(palette: palette),
         'a': _LinkBuilder(
@@ -363,6 +366,245 @@ class _CopyButton extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(4),
         child: Icon(Icons.copy_rounded, size: 16, color: palette.fgMuted),
+      ),
+    );
+  }
+}
+
+/// Rewrites raw HTML `<img>` tags into Markdown image syntax so the native
+/// renderer can display them (GitHub allows HTML inside Markdown).
+///
+/// Fenced code blocks and inline code spans are left untouched. Other HTML
+/// container/formatting tags (e.g. `<p>`, `<a>`, `<div>`) are stripped, and
+/// HTML comments are removed.
+String _expandHtmlImages(String source) {
+  final text = source.replaceAll(_htmlComment, '');
+  final lines = text.split('\n');
+  final result = <String>[];
+  var inFence = false;
+  for (final line in lines) {
+    final trimmed = line.trimLeft();
+    if (trimmed.startsWith('```') || trimmed.startsWith('~~~')) {
+      inFence = !inFence;
+      result.add(line);
+      continue;
+    }
+    result.add(inFence ? line : _processHtmlLine(line));
+  }
+  return result.join('\n');
+}
+
+final RegExp _htmlComment = RegExp(r'<!--[\s\S]*?-->');
+final RegExp _htmlImgTag = RegExp(r'<img\b([^>]*)>', caseSensitive: false);
+final RegExp _htmlAnyTag = RegExp(r'</?[a-zA-Z][a-zA-Z0-9]*(\s[^>]*)?/?>');
+final RegExp _inlineCodeSpan = RegExp(r'`[^`]*`');
+
+String _processHtmlLine(String line) {
+  final held = <String>[];
+  var work = line.replaceAllMapped(_inlineCodeSpan, (match) {
+    held.add(match.group(0)!);
+    return '\u0000${held.length - 1}\u0000';
+  });
+  work = work.replaceAllMapped(
+    _htmlImgTag,
+    (match) => _imgTagToMarkdown(match.group(1) ?? ''),
+  );
+  work = work.replaceAll(_htmlAnyTag, '');
+  work = work.replaceAllMapped(
+    RegExp(r'\u0000(\d+)\u0000'),
+    (match) => held[int.parse(match.group(1)!)],
+  );
+  return work;
+}
+
+String _imgTagToMarkdown(String attributes) {
+  final src = _htmlAttribute(attributes, 'src');
+  if (src == null || src.isEmpty) return '';
+  final alt = _htmlAttribute(attributes, 'alt') ?? '';
+  final title = _htmlAttribute(attributes, 'title') ?? '';
+  final destination = _imageDestination(
+    src,
+    _htmlAttribute(attributes, 'width'),
+    _htmlAttribute(attributes, 'height'),
+  );
+  final escapedAlt = alt
+      .replaceAll(r'\', r'\\')
+      .replaceAll('[', r'\[')
+      .replaceAll(']', r'\]');
+  final buffer = StringBuffer('![$escapedAlt]($destination');
+  if (title.isNotEmpty) {
+    buffer.write(' "${title.replaceAll('"', r'\"')}"');
+  }
+  buffer.write(')');
+  return buffer.toString();
+}
+
+String _imageDestination(String src, String? width, String? height) {
+  var destination = src
+      .replaceAll(' ', '%20')
+      .replaceAll('(', '%28')
+      .replaceAll(')', '%29');
+  final w = _digitsOnly(width);
+  final h = _digitsOnly(height);
+  if (w.isNotEmpty || h.isNotEmpty) {
+    destination += '#${w}x$h';
+  }
+  return destination;
+}
+
+String _digitsOnly(String? value) =>
+    value == null ? '' : value.replaceAll(RegExp(r'[^0-9.]'), '');
+
+String? _htmlAttribute(String attributes, String name) {
+  final match = RegExp(
+    '\\b$name\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s"\'>]+))',
+    caseSensitive: false,
+  ).firstMatch(attributes);
+  if (match == null) return null;
+  return match.group(1) ?? match.group(2) ?? match.group(3);
+}
+
+/// Builds an image widget for a Markdown `![alt](src)` reference.
+///
+/// Handles remote (`http`/`https`), inline (`data:`), bundled (`resource:`) and
+/// local files. Relative local paths are resolved against [baseDir] (the
+/// directory of the Markdown file being previewed), the way GitHub resolves
+/// repository-relative image links.
+Widget _buildImage(
+  MarkdownImageConfig config,
+  GitHubPalette palette,
+  String? baseDir,
+) {
+  final uri = config.uri;
+  final width = config.width;
+  final height = config.height;
+
+  Widget broken(BuildContext context, Object error, StackTrace? stackTrace) =>
+      _BrokenImage(config: config, palette: palette);
+
+  switch (uri.scheme) {
+    case 'http':
+    case 'https':
+      return Image.network(
+        uri.toString(),
+        width: width,
+        height: height,
+        errorBuilder: broken,
+      );
+    case 'data':
+      try {
+        return Image.memory(
+          uri.data!.contentAsBytes(),
+          width: width,
+          height: height,
+          errorBuilder: broken,
+        );
+      } catch (_) {
+        return _BrokenImage(config: config, palette: palette);
+      }
+    case 'resource':
+      return Image.asset(
+        uri.path,
+        width: width,
+        height: height,
+        errorBuilder: broken,
+      );
+  }
+
+  final source = uri.scheme == 'file'
+      ? uri.toFilePath()
+      : _decodeSource(uri.toString());
+  return Image.file(
+    _resolveImageFile(source, baseDir),
+    width: width,
+    height: height,
+    filterQuality: FilterQuality.medium,
+    errorBuilder: broken,
+  );
+}
+
+String _decodeSource(String value) {
+  try {
+    return Uri.decodeFull(value);
+  } catch (_) {
+    return value;
+  }
+}
+
+/// Resolves a local image path against the Markdown file's directory.
+File _resolveImageFile(String source, String? baseDir) {
+  final candidates = <String>[];
+  if (source.startsWith('/')) {
+    candidates.add(source);
+    if (baseDir != null) {
+      candidates.add(_joinPath(baseDir, source.substring(1)));
+    }
+  } else {
+    candidates.add(baseDir == null ? source : _joinPath(baseDir, source));
+  }
+  for (final candidate in candidates) {
+    final normalized = _normalizePath(candidate);
+    if (File(normalized).existsSync()) return File(normalized);
+  }
+  return File(_normalizePath(candidates.first));
+}
+
+String _joinPath(String dir, String relative) =>
+    dir.endsWith('/') ? '$dir$relative' : '$dir/$relative';
+
+String _normalizePath(String path) {
+  final isAbsolute = path.startsWith('/');
+  final segments = <String>[];
+  for (final segment in path.split('/')) {
+    if (segment.isEmpty || segment == '.') continue;
+    if (segment == '..') {
+      if (segments.isNotEmpty && segments.last != '..') {
+        segments.removeLast();
+      } else if (!isAbsolute) {
+        segments.add('..');
+      }
+    } else {
+      segments.add(segment);
+    }
+  }
+  return '${isAbsolute ? '/' : ''}${segments.join('/')}';
+}
+
+/// Shown when an image cannot be loaded, mirroring GitHub's broken-image style.
+class _BrokenImage extends StatelessWidget {
+  const _BrokenImage({required this.config, required this.palette});
+
+  final MarkdownImageConfig config;
+  final GitHubPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = (config.alt?.isNotEmpty ?? false)
+        ? config.alt!
+        : (config.title?.isNotEmpty ?? false)
+        ? config.title!
+        : 'Image';
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 480),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: palette.canvasSubtle,
+        border: Border.all(color: palette.border),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.broken_image_outlined, size: 16, color: palette.fgMuted),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, color: palette.fgMuted),
+            ),
+          ),
+        ],
       ),
     );
   }
