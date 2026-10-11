@@ -180,8 +180,6 @@ icons/                          # app icons + README banner
 scripts/
   install.sh                    # user-level installer
   build-deb.sh                  # Debian (.deb) package builder
-tool/
-  generate_icons.py             # icon generator (Pillow)
 test/                           # widget & scroll tests
 ```
 
