@@ -6,6 +6,8 @@
  * Web:        https://xrow.asia
  */
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:yaru/yaru.dart';
 
@@ -147,10 +149,15 @@ class _QuickSettingsDialogState extends State<QuickSettingsDialog> {
 
   String _subtitle() {
     if (!_installed) {
-      return 'Not installed for the desktop yet. Run scripts/install.sh first.';
+      return Platform.isWindows
+          ? 'Not registered for the desktop yet. Use “Set as default”.'
+          : 'Not installed for the desktop yet. Run scripts/install.sh first.';
     }
-    return _isDefault
-        ? 'Enabled — double-clicking a .md file opens this app.'
+    if (_isDefault) {
+      return 'Enabled — double-clicking a .md file opens this app.';
+    }
+    return Platform.isWindows
+        ? 'Registered, but another app opens .md files. Use “Set as default”.'
         : 'Disabled — .md files currently open in another app.';
   }
 }

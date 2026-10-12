@@ -260,7 +260,26 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// Opens a URL with the desktop's handler without blocking the UI thread.
+  ///
+  /// On Windows, `url_launcher` hands the URL to the shell (ShellExecute), so
+  /// it is used directly. On Linux the launcher is spawned as a detached
+  /// process instead, because `url_launcher`'s GTK backend blocks the main
+  /// loop while the browser/portal starts.
   Future<void> _launchExternal(String url) async {
+    if (Platform.isWindows) {
+      final uri = Uri.tryParse(url);
+      if (uri != null) {
+        try {
+          if (await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+            return;
+          }
+        } catch (_) {
+          // Fall through to the message below.
+        }
+      }
+      _showMessage('Could not open link');
+      return;
+    }
     for (final command in <List<String>>[
       <String>['xdg-open', url],
       <String>['gio', 'open', url],

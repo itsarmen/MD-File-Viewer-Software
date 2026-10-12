@@ -16,12 +16,24 @@ class RecentStore {
   final File _file;
 
   static Future<RecentStore> open() async {
-    final home = Platform.environment['HOME'] ?? Directory.current.path;
-    final dir = Directory('$home/.config/md_file_viewer');
+    final dir = Directory(_configDirectory());
     if (!await dir.exists()) {
       await dir.create(recursive: true);
     }
-    return RecentStore._(File('${dir.path}/state.json'));
+    return RecentStore._(File('${dir.path}${Platform.pathSeparator}state.json'));
+  }
+
+  /// Per-user config directory: `%APPDATA%` on Windows, `~/.config` elsewhere.
+  static String _configDirectory() {
+    if (Platform.isWindows) {
+      final appData = Platform.environment['APPDATA'];
+      if (appData != null && appData.isNotEmpty) {
+        return '$appData\\md_file_viewer';
+      }
+      return '${Directory.current.path}\\md_file_viewer';
+    }
+    final home = Platform.environment['HOME'] ?? Directory.current.path;
+    return '$home/.config/md_file_viewer';
   }
 
   Future<Map<String, dynamic>> read() async {
