@@ -37,6 +37,7 @@ class _HomePageState extends State<HomePage> {
   final TextEditingController _editor = TextEditingController();
   final TextEditingController _search = TextEditingController();
   final ScrollController _previewScroll = ScrollController();
+  final FocusNode _editorFocus = FocusNode();
 
   RecentStore? _store;
   String? _path;
@@ -75,6 +76,7 @@ class _HomePageState extends State<HomePage> {
       ..dispose();
     _search.dispose();
     _previewScroll.dispose();
+    _editorFocus.dispose();
     super.dispose();
   }
 
@@ -380,6 +382,212 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  void _setEditorValue(String text, int selectionStart, int selectionEnd) {
+    _editor.value = TextEditingValue(
+      text: text,
+      selection: TextSelection(
+        baseOffset: selectionStart,
+        extentOffset: selectionEnd,
+      ),
+    );
+    _editorFocus.requestFocus();
+  }
+
+  ({int start, int end}) _lineBounds() {
+    final text = _editor.text;
+    final selection = _editor.selection;
+    final searchFrom = selection.start - 1;
+    final lineStart =
+        searchFrom < 0 ? 0 : text.lastIndexOf('\n', searchFrom) + 1;
+    var lineEnd = text.indexOf('\n', selection.end);
+    if (lineEnd == -1) lineEnd = text.length;
+    return (start: lineStart, end: lineEnd);
+  }
+
+  void _wrapSelection(String left, String right) {
+    final text = _editor.text;
+    final selection = _editor.selection;
+    if (!selection.isValid) return;
+    final start = selection.start;
+    final end = selection.end;
+    final selected = text.substring(start, end);
+    if (selected.isEmpty) {
+      final marker = '$left$right';
+      _setEditorValue(
+        text.replaceRange(start, end, marker),
+        start + left.length,
+        start + left.length,
+      );
+      return;
+    }
+    if (selected.length >= left.length + right.length &&
+        selected.startsWith(left) &&
+        selected.endsWith(right)) {
+      final inner =
+          selected.substring(left.length, selected.length - right.length);
+      _setEditorValue(
+        text.replaceRange(start, end, inner),
+        start,
+        start + inner.length,
+      );
+      return;
+    }
+    final wrapped = '$left$selected$right';
+    _setEditorValue(
+      text.replaceRange(start, end, wrapped),
+      start + left.length,
+      start + left.length + selected.length,
+    );
+  }
+
+  void _toggleLinePrefix(String prefix) {
+    final text = _editor.text;
+    if (!_editor.selection.isValid) return;
+    final bounds = _lineBounds();
+    final lines = text.substring(bounds.start, bounds.end).split('\n');
+    final allPrefixed = lines.every((line) => line.startsWith(prefix));
+    final updated = <String>[
+      for (final line in lines)
+        if (allPrefixed)
+          line.substring(prefix.length)
+        else if (line.startsWith(prefix))
+          line
+        else
+          '$prefix$line',
+    ].join('\n');
+    _setEditorValue(
+      text.replaceRange(bounds.start, bounds.end, updated),
+      bounds.start,
+      bounds.start + updated.length,
+    );
+  }
+
+  void _toggleOrderedList() {
+    final text = _editor.text;
+    if (!_editor.selection.isValid) return;
+    final bounds = _lineBounds();
+    final lines = text.substring(bounds.start, bounds.end).split('\n');
+    final numbered = RegExp(r'^\d+\.\s');
+    final allNumbered = lines.every(numbered.hasMatch);
+    final buffer = StringBuffer();
+    for (var i = 0; i < lines.length; i++) {
+      if (i > 0) buffer.write('\n');
+      final line = lines[i];
+      if (allNumbered) {
+        buffer.write(line.replaceFirst(numbered, ''));
+      } else if (numbered.hasMatch(line)) {
+        buffer.write(line);
+      } else {
+        buffer.write('${i + 1}. $line');
+      }
+    }
+    final updated = buffer.toString();
+    _setEditorValue(
+      text.replaceRange(bounds.start, bounds.end, updated),
+      bounds.start,
+      bounds.start + updated.length,
+    );
+  }
+
+  void _applyHeading(int level) {
+    final text = _editor.text;
+    final selection = _editor.selection;
+    if (!selection.isValid) return;
+    final searchFrom = selection.start - 1;
+    final lineStart =
+        searchFrom < 0 ? 0 : text.lastIndexOf('\n', searchFrom) + 1;
+    var lineEnd = text.indexOf('\n', selection.start);
+    if (lineEnd == -1) lineEnd = text.length;
+    final stripped = text
+        .substring(lineStart, lineEnd)
+        .replaceFirst(RegExp(r'^#{1,6}\s*'), '');
+    final prefix = level <= 0 ? '' : '${'#' * level} ';
+    final updated = '$prefix$stripped';
+    _setEditorValue(
+      text.replaceRange(lineStart, lineEnd, updated),
+      lineStart + updated.length,
+      lineStart + updated.length,
+    );
+  }
+
+  void _toggleCodeBlock() {
+    final text = _editor.text;
+    final selection = _editor.selection;
+    if (!selection.isValid) return;
+    final start = selection.start;
+    final end = selection.end;
+    final selected = text.substring(start, end);
+    if (selected.startsWith('```') && selected.endsWith('```')) {
+      final inner = selected
+          .replaceFirst(RegExp(r'^```[^\n]*\n?'), '')
+          .replaceFirst(RegExp(r'\n?```$'), '');
+      _setEditorValue(
+        text.replaceRange(start, end, inner),
+        start,
+        start + inner.length,
+      );
+      return;
+    }
+    if (selected.isEmpty) {
+      const fence = '```\n\n```';
+      _setEditorValue(
+        text.replaceRange(start, end, fence),
+        start + 4,
+        start + 4,
+      );
+      return;
+    }
+    final fenced = '```\n$selected\n```';
+    _setEditorValue(
+      text.replaceRange(start, end, fenced),
+      start + 4,
+      start + 4 + selected.length,
+    );
+  }
+
+  void _insertLink({required bool image}) {
+    final text = _editor.text;
+    final selection = _editor.selection;
+    if (!selection.isValid) return;
+    final start = selection.start;
+    final end = selection.end;
+    final selected = text.substring(start, end);
+    final bang = image ? '!' : '';
+    if (selected.isEmpty) {
+      final label = image ? 'alt text' : 'link text';
+      final snippet = '$bang[$label](url)';
+      final labelStart = start + bang.length + 1;
+      _setEditorValue(
+        text.replaceRange(start, end, snippet),
+        labelStart,
+        labelStart + label.length,
+      );
+      return;
+    }
+    final snippet = '$bang[$selected](url)';
+    final urlStart = start + bang.length + 1 + selected.length + 2;
+    _setEditorValue(
+      text.replaceRange(start, end, snippet),
+      urlStart,
+      urlStart + 3,
+    );
+  }
+
+  void _insertHorizontalRule() {
+    final text = _editor.text;
+    final selection = _editor.selection;
+    if (!selection.isValid) return;
+    final start = selection.start;
+    final end = selection.end;
+    final needsLeading = start > 0 && text[start - 1] != '\n';
+    final rule = '${needsLeading ? '\n' : ''}---\n';
+    _setEditorValue(
+      text.replaceRange(start, end, rule),
+      start + rule.length,
+      start + rule.length,
+    );
+  }
+
   KeyEventResult _handleScrollKeys(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
@@ -416,6 +624,15 @@ class _HomePageState extends State<HomePage> {
           control: true,
           shift: true,
         ): _saveAs,
+        const SingleActivator(LogicalKeyboardKey.keyB, control: true): () {
+          if (_mode != ViewMode.preview) _wrapSelection('**', '**');
+        },
+        const SingleActivator(LogicalKeyboardKey.keyI, control: true): () {
+          if (_mode != ViewMode.preview) _wrapSelection('*', '*');
+        },
+        const SingleActivator(LogicalKeyboardKey.keyK, control: true): () {
+          if (_mode != ViewMode.preview) _insertLink(image: false);
+        },
       },
       child: Focus(
         autofocus: true,
@@ -713,25 +930,130 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildEditor() {
+  Widget _buildFormatToolbar(ThemeData theme) {
+    Widget button(IconData icon, String tooltip, VoidCallback onPressed) {
+      return IconButton(
+        icon: Icon(icon, size: 18),
+        tooltip: tooltip,
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.all(6),
+        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+        onPressed: onPressed,
+      );
+    }
+
     return Container(
-      color: Theme.of(context).colorScheme.surface,
-      child: TextField(
-        controller: _editor,
-        maxLines: null,
-        expands: true,
-        textAlignVertical: TextAlignVertical.top,
-        keyboardType: TextInputType.multiline,
-        style: const TextStyle(
-          fontFamily: 'monospace',
-          fontSize: 14,
-          height: 1.55,
+      height: 40,
+      alignment: Alignment.centerLeft,
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: theme.dividerColor)),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Row(
+          children: [
+            PopupMenuButton<int>(
+              tooltip: 'Heading',
+              icon: const Icon(Icons.format_size, size: 18),
+              onSelected: _applyHeading,
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: 0, child: Text('Normal text')),
+                PopupMenuItem(value: 1, child: Text('Heading 1')),
+                PopupMenuItem(value: 2, child: Text('Heading 2')),
+                PopupMenuItem(value: 3, child: Text('Heading 3')),
+              ],
+            ),
+            button(
+              Icons.format_bold,
+              'Bold (Ctrl+B)',
+              () => _wrapSelection('**', '**'),
+            ),
+            button(
+              Icons.format_italic,
+              'Italic (Ctrl+I)',
+              () => _wrapSelection('*', '*'),
+            ),
+            button(
+              Icons.format_strikethrough,
+              'Strikethrough',
+              () => _wrapSelection('~~', '~~'),
+            ),
+            button(
+              Icons.code,
+              'Inline code',
+              () => _wrapSelection('`', '`'),
+            ),
+            button(Icons.data_object, 'Code block', _toggleCodeBlock),
+            button(
+              Icons.format_quote,
+              'Quote',
+              () => _toggleLinePrefix('> '),
+            ),
+            button(
+              Icons.link,
+              'Link (Ctrl+K)',
+              () => _insertLink(image: false),
+            ),
+            button(
+              Icons.image_outlined,
+              'Image',
+              () => _insertLink(image: true),
+            ),
+            button(
+              Icons.format_list_bulleted,
+              'Bulleted list',
+              () => _toggleLinePrefix('- '),
+            ),
+            button(
+              Icons.format_list_numbered,
+              'Numbered list',
+              _toggleOrderedList,
+            ),
+            button(
+              Icons.checklist,
+              'Task list',
+              () => _toggleLinePrefix('- [ ] '),
+            ),
+            button(
+              Icons.horizontal_rule,
+              'Horizontal rule',
+              _insertHorizontalRule,
+            ),
+          ],
         ),
-        decoration: const InputDecoration(
-          border: InputBorder.none,
-          contentPadding: EdgeInsets.all(20),
-          hintText: 'Write Markdown here…',
-        ),
+      ),
+    );
+  }
+
+  Widget _buildEditor() {
+    final theme = Theme.of(context);
+    return Container(
+      color: theme.colorScheme.surface,
+      child: Column(
+        children: [
+          _buildFormatToolbar(theme),
+          Expanded(
+            child: TextField(
+              controller: _editor,
+              focusNode: _editorFocus,
+              maxLines: null,
+              expands: true,
+              textAlignVertical: TextAlignVertical.top,
+              keyboardType: TextInputType.multiline,
+              style: const TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 14,
+                height: 1.55,
+              ),
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.all(20),
+                hintText: 'Write Markdown here…',
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
