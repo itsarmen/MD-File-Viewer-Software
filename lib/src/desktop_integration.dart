@@ -8,22 +8,36 @@
 
 import 'dart:io';
 
+import 'package:url_launcher/url_launcher.dart';
+
 /// Desktop integration helpers for registering the app as the default
 /// Markdown handler.
 ///
 /// On Linux this is backed by `xdg-mime`. On Windows it registers per-user
-/// file associations under `HKCU\Software\Classes` using `reg.exe`, so no
-/// administrator rights are required.
+/// file associations under `HKCU` using `reg.exe` (no administrator rights
+/// needed) and opens the “Default apps” settings page, because Windows 8+
+/// keeps the real association in a protected `UserChoice` key that
+/// applications cannot write directly.
 class DesktopIntegration {
   static const desktopId = 'md-file-viewer.desktop';
   static const mimeTypes = ['text/markdown', 'text/x-markdown'];
 
-  static const _progId = 'MDFileViewer';
   static const _friendlyName = 'MD File Viewer';
-  static const _appKey = r'Software\Classes\Applications\md-file-viewer.exe';
+  static const _progId = 'MDFileViewer';
   static const _progIdKey = r'Software\Classes\MDFileViewer';
   static const _mdKey = r'Software\Classes\.md';
-  static const _openWithKey = r'Software\Classes\.md\OpenWithProgids';
+  static const _openWithProgidsKey = r'Software\Classes\.md\OpenWithProgids';
+  static const _capabilitiesKey = r'Software\MD File Viewer\Capabilities';
+  static const _registeredAppsKey = r'Software\RegisteredApplications';
+  static const _userChoiceKey =
+      r'Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.md\UserChoice';
+
+  /// Name of the running executable; Windows keys “Open with” entries by it.
+  static String get _exeName =>
+      Platform.resolvedExecutable.split(Platform.pathSeparator).last;
+
+  static String get _applicationsKey =>
+      'Software\\Classes\\Applications\\$_exeName';
 
   String get _desktopFile {
     final home = Platform.environment['HOME'] ?? '';
@@ -33,7 +47,7 @@ class DesktopIntegration {
   /// Whether the app is registered for the desktop.
   Future<bool> isInstalled() async {
     if (Platform.isWindows) {
-      return _regKeyExists(_appKey);
+      return _regKeyExists(_capabilitiesKey);
     }
     return File(_desktopFile).exists();
   }
@@ -41,6 +55,12 @@ class DesktopIntegration {
   /// Whether this app is currently the default handler for Markdown.
   Future<bool> isDefault() async {
     if (Platform.isWindows) {
+      final choice = await _regQuery(_userChoiceKey, 'ProgId');
+      if (choice != null && choice.isNotEmpty) {
+        final value = choice.toLowerCase();
+        return value == _progId.toLowerCase() ||
+            value == 'applications\\$_exeName'.toLowerCase();
+      }
       final value = await _regQuery(_mdKey, '');
       return value?.toLowerCase() == _progId.toLowerCase();
     }
@@ -52,14 +72,35 @@ class DesktopIntegration {
   }
 
   /// Registers this app as the default opener for Markdown files.
+  ///
+  /// On Windows, Microsoft reserves the final default-app choice to the
+  /// user, so this registers the app and opens Settings → Default apps,
+  /// where the user confirms MD File Viewer for `.md` files.
   Future<bool> setAsDefault() async {
-    if (Platform.isWindows) return _registerWindows();
+    if (Platform.isWindows) {
+      final registered = await _registerWindows();
+      final opened = await openDefaultAppsSettings();
+      return registered && opened;
+    }
     var ok = true;
     for (final mime in mimeTypes) {
       final value = await _run(['default', desktopId, mime]);
       if (value == null) ok = false;
     }
     return ok;
+  }
+
+  /// Opens Settings → Default apps filtered to this app (Windows only).
+  Future<bool> openDefaultAppsSettings() async {
+    final uri = Uri.parse(
+      'ms-settings:defaultapps'
+      '?registeredAppUser=${Uri.encodeComponent(_friendlyName)}',
+    );
+    try {
+      return await launchUrl(uri);
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<bool> _registerWindows() async {
@@ -76,20 +117,35 @@ class DesktopIntegration {
       if (!await _regAdd(key, name, value, type: type)) ok = false;
     }
 
-    // Register the executable so it shows up under "Open with".
-    await add(_appKey, 'FriendlyAppName', _friendlyName);
-    await add('$_appKey\\DefaultIcon', '', '"$exe",0');
-    await add('$_appKey\\shell\\open\\command', '', command);
+    // “Open with” entry, keyed by the executable file name.
+    await add(_applicationsKey, 'FriendlyAppName', _friendlyName);
+    await add('$_applicationsKey\\DefaultIcon', '', '"$exe",0');
+    await add('$_applicationsKey\\shell\\open\\command', '', command);
 
-    // Register a ProgID and advertise it for .md files.
+    // ProgID shown for `.md` files.
     await add(_progIdKey, '', _friendlyName);
     await add('$_progIdKey\\DefaultIcon', '', '"$exe",0');
     await add('$_progIdKey\\shell\\open\\command', '', command);
-    await add(_openWithKey, _progId, '', type: 'REG_NONE');
+    await add(_openWithProgidsKey, _progId, '', type: 'REG_NONE');
 
-    // Best effort: become the default when Windows has no user choice set.
-    await add(_mdKey, '', _progId);
+    // Capabilities so the app appears in Settings → Default apps.
+    await add(_capabilitiesKey, 'ApplicationName', _friendlyName);
+    await add(_capabilitiesKey, 'ApplicationDescription',
+        'View and edit Markdown files.');
+    await add('$_capabilitiesKey\\FileAssociations', '.md', _progId);
+    await add(_registeredAppsKey, _friendlyName, _capabilitiesKey);
+
+    // Legacy fallback: only effective while Windows has no UserChoice set.
+    if (!await _hasUserChoice()) {
+      await add(_mdKey, '', _progId);
+    }
+
     return ok;
+  }
+
+  Future<bool> _hasUserChoice() async {
+    final choice = await _regQuery(_userChoiceKey, 'ProgId');
+    return choice != null && choice.isNotEmpty;
   }
 
   Future<String?> _run(List<String> args) async {

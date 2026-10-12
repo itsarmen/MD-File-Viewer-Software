@@ -52,6 +52,14 @@ class _QuickSettingsDialogState extends State<QuickSettingsDialog> {
     await _refresh();
     if (!mounted) return;
     setState(() => _busy = false);
+    if (Platform.isWindows) {
+      _message(
+        ok
+            ? 'Choose “MD File Viewer” in the Windows Settings window to finish'
+            : 'Could not open Windows default-apps settings',
+      );
+      return;
+    }
     _message(
       ok
           ? 'MD File Viewer is now the default for .md files'
@@ -116,7 +124,7 @@ class _QuickSettingsDialogState extends State<QuickSettingsDialog> {
               Align(
                 alignment: Alignment.centerRight,
                 child: FilledButton.icon(
-                  onPressed: (_busy || _isDefault || !_installed)
+                  onPressed: (_busy || _isDefault || (!_installed && !Platform.isWindows))
                       ? null
                       : _setDefault,
                   icon: _busy
@@ -157,7 +165,7 @@ class _QuickSettingsDialogState extends State<QuickSettingsDialog> {
       return 'Enabled — double-clicking a .md file opens this app.';
     }
     return Platform.isWindows
-        ? 'Registered, but another app opens .md files. Use “Set as default”.'
+        ? 'Not the default yet — “Set as default” opens Windows Settings.'
         : 'Disabled — .md files currently open in another app.';
   }
 }
